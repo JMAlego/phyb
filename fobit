@@ -6,6 +6,7 @@ from os import listdir, path, makedirs
 from shutil import copyfile
 from typing import Any, Dict, Iterator, Mapping, Optional
 from textwrap import dedent
+from collections import namedtuple
 
 __version__ = "0.1"
 __author__ = "Jacob Allen <jacob@polyomino.xyz>"
@@ -14,6 +15,9 @@ __license__ = "BSD 3-Clause"
 
 class FobIt:
     """FobIt class, encapsulates scope for FobIt."""
+
+    Section = namedtuple("Section", ["type", "content"])
+
     def __init__(self, input_file: str, output_file: Optional[str]) -> None:
         self._input_file = path.abspath(input_file)
         self._output_file = path.abspath(output_file) if output_file else None
@@ -81,22 +85,36 @@ class FobIt:
             return file_handle.read()
 
     @staticmethod
-    def get_template_sections(template_text: str) -> Iterator[str]:
+    def get_template_sections(template_text: str) -> Iterator["FobIt.Section"]:
         """Get text sections (internal)."""
+
         current_section = ""
-        current_section_is_text = True
+        current_section_type = "text"
         last_character = ""
         for character in template_text:
             current_section += character
-            is_open_block = current_section_is_text and last_character + character == "{!"
-            is_close_block = not current_section_is_text and last_character + character == "!}"
-            if is_open_block or is_close_block:
+
+            if current_section_type == "text":
+                if last_character + character == "{!":
+                    current_section = current_section[:-2]
+                    yield FobIt.Section(type=current_section_type, content=current_section)
+                    current_section_type, current_section = "code", ""
+                elif last_character + character == "{$":
+                    current_section = current_section[:-2]
+                    yield FobIt.Section(type=current_section_type, content=current_section)
+                    current_section_type, current_section = "lambda", ""
+            elif current_section_type == "code" and last_character + character == "!}":
                 current_section = current_section[:-2]
-                yield current_section
-                current_section_is_text = not current_section_is_text
-                current_section = ""
+                yield FobIt.Section(type=current_section_type, content=current_section)
+                current_section_type, current_section = "text", ""
+            elif current_section_type == "lambda" and last_character + character == "$}":
+                current_section = current_section[:-2]
+                yield FobIt.Section(type=current_section_type, content=current_section)
+                current_section_type, current_section = "text", ""
+
             last_character = character
-        yield current_section
+
+        yield FobIt.Section(type=current_section_type, content=current_section)
 
     def do_fobit(self, file_name: str) -> None:
         """Run fobit file (internal)."""
@@ -107,14 +125,21 @@ class FobIt:
         file_content = FobIt.get_file_content(file_path)
 
         file_sections = FobIt.get_template_sections(file_content)
-        code_section_active = False
+        previous_section_type = "text"
 
         for current_section in file_sections:
-            if code_section_active:
-                exec(dedent(current_section), self._globals, self._locals)  # pylint: disable=exec-used
-            else:
-                print(current_section, end="")
-            code_section_active = not code_section_active
+            if current_section.type == "code":
+                exec(dedent(current_section.content), self._globals, self._locals)  # pylint: disable=exec-used
+            elif current_section.type == "text":
+                if previous_section_type == "code" and current_section.content.startswith(
+                    ("\n", "\r\n")):
+                    _, _, to_print = current_section.content.partition("\n")
+                    print(to_print, end="")
+                else:
+                    print(current_section.content, end="")
+            elif current_section.type == "lambda":
+                print(eval(dedent(current_section.content), self._globals, self._locals), end="")  # pylint: disable=eval-used
+            previous_section_type = current_section.type
 
         self._globals["CURRENT_FILE"] = old_fob_file
 
@@ -134,10 +159,8 @@ class FobIt:
 def main() -> None:
     """Run fobit (internal)."""
     argument_parser = ArgumentParser(description=__doc__)
-    argument_parser.add_argument("-v",
-                                 "--version",
-                                 action="version",
-                                 version="%(prog)s " + __version__)
+    argument_parser.add_argument(
+        "-v", "--version", action="version", version="%(prog)s " + __version__)
     argument_parser.add_argument("INPUT_PATH")
     argument_parser.add_argument("OUTPUT_PATH", nargs="?")
 
