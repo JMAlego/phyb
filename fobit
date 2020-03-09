@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""fobit fobs off static website generation (mostly) to python."""
+import sys
+from argparse import ArgumentParser
+from os import listdir, path, makedirs
+from shutil import copyfile
+from typing import Any, Dict, Iterator, Mapping, Optional
+from textwrap import dedent
+
+__version__ = "0.1"
+__author__ = "Jacob Allen <jacob@polyomino.xyz>"
+__license__ = "BSD 3-Clause"
+
+
+class FobIt:
+    """FobIt class, encapsulates scope for FobIt."""
+    def __init__(self, input_file: str, output_file: Optional[str]) -> None:
+        self._input_file = path.abspath(input_file)
+        self._output_file = path.abspath(output_file) if output_file else None
+        self._locals = {}  # type: Mapping[str, Any]
+        self._globals = {
+            "code": self.run_python_file,
+            "include": self._stdlib_include,
+            "echo": FobIt._stdlib_echo,
+            "copy_to_output": self._stdlib_copy_to_output,
+            "input_path": self._stdlib_input_path,
+            "output_path": self._stdlib_output_path,
+            "CURRENT_FILE": None,
+            "OUTPUT_PATH": self._output_file,
+            "INPUT_FILE": self._input_file
+        }  # type: Dict[str, Any]
+
+    @staticmethod
+    def _stdlib_echo(*args: Any, **kwargs: Any) -> None:
+        """Print, but without the newline."""
+        print(*args, end="", **kwargs)
+
+    def _stdlib_include(self, file_name: str) -> None:
+        """Include another fobit file."""
+        self.do_fobit(file_name)
+
+    def _stdlib_copy_to_output(self,
+                               source_file: str,
+                               destination_file: Optional[str] = None,
+                               make_dirs=False) -> None:
+        """Copy a file to output."""
+        source_path = self._stdlib_input_path(source_file)
+        destination_path = FobIt.get_path_relative_to_file(
+            destination_file if destination_file else source_file, self._globals["OUTPUT_PATH"])
+        if make_dirs:
+            makedirs(path.dirname(destination_path), exist_ok=True)
+        copyfile(source_path, destination_path)
+
+    def _stdlib_input_path(self, input_path: str) -> str:
+        """Get a path in input directory."""
+        return FobIt.get_path_relative_to_file(input_path, self._globals["CURRENT_FILE"])
+
+    def _stdlib_output_path(self, output_path: str) -> str:
+        """Get a path in input directory."""
+        return FobIt.get_path_relative_to_file(output_path, self._globals["OUTPUT_PATH"])
+
+    def run_python_file(self, file_name: str) -> None:
+        """Run a python file."""
+        old_fob_file = self._globals["CURRENT_FILE"]
+        file_path = path.abspath(FobIt.get_path_relative_to_file(file_name, old_fob_file))
+        self._globals["CURRENT_FILE"] = file_path
+
+        exec(FobIt.get_file_content(file_path), self._globals, self._locals)  # pylint: disable=exec-used
+
+        self._globals["CURRENT_FILE"] = old_fob_file
+
+    @staticmethod
+    def get_path_relative_to_file(path_to_get: str, relative_file: Optional[str]) -> str:
+        """Get a path relative to a file."""
+        return path.join(path.dirname(relative_file), path_to_get) if relative_file else path_to_get
+
+    @staticmethod
+    def get_file_content(file_name: str) -> str:
+        """Get file content (internal)."""
+        with open(file_name, "r") as file_handle:
+            return file_handle.read()
+
+    @staticmethod
+    def get_template_sections(template_text: str) -> Iterator[str]:
+        """Get text sections (internal)."""
+        current_section = ""
+        current_section_is_text = True
+        last_character = ""
+        for character in template_text:
+            current_section += character
+            is_open_block = current_section_is_text and last_character + character == "{!"
+            is_close_block = not current_section_is_text and last_character + character == "!}"
+            if is_open_block or is_close_block:
+                current_section = current_section[:-2]
+                yield current_section
+                current_section_is_text = not current_section_is_text
+                current_section = ""
+            last_character = character
+        yield current_section
+
+    def do_fobit(self, file_name: str) -> None:
+        """Run fobit file (internal)."""
+        old_fob_file = self._globals["CURRENT_FILE"]
+        file_path = path.abspath(FobIt.get_path_relative_to_file(file_name, old_fob_file))
+        self._globals["CURRENT_FILE"] = file_path
+
+        file_content = FobIt.get_file_content(file_path)
+
+        file_sections = FobIt.get_template_sections(file_content)
+        code_section_active = False
+
+        for current_section in file_sections:
+            if code_section_active:
+                exec(dedent(current_section), self._globals, self._locals)  # pylint: disable=exec-used
+            else:
+                print(current_section, end="")
+            code_section_active = not code_section_active
+
+        self._globals["CURRENT_FILE"] = old_fob_file
+
+    def run(self) -> None:
+        """Run fobit on a file at top level (internal)."""
+        true_stdout = sys.stdout
+        if self._output_file:
+            sys.stdout = open(self._output_file, "w")
+
+        self.do_fobit(self._input_file)
+
+        if self._output_file:
+            false_stdout, sys.stdout = sys.stdout, true_stdout
+            false_stdout.close()
+
+
+def main() -> None:
+    """Run fobit (internal)."""
+    argument_parser = ArgumentParser(description=__doc__)
+    argument_parser.add_argument("-v",
+                                 "--version",
+                                 action="version",
+                                 version="%(prog)s " + __version__)
+    argument_parser.add_argument("INPUT_PATH")
+    argument_parser.add_argument("OUTPUT_PATH", nargs="?")
+
+    parsed_arguments = argument_parser.parse_args()
+
+    input_path = parsed_arguments.INPUT_PATH
+    output_path = parsed_arguments.OUTPUT_PATH
+
+    if path.isdir(input_path):
+        for input_file in listdir(input_path):
+            if output_path is None:
+                argument_parser.error("OUTPUT_PATH is required if INPUT_PATH is a folder.")
+            input_file = path.join(input_path, input_file)
+            if not path.isfile(input_file) or not input_file.endswith((".fob", ".fib")):
+                continue
+            output_file = path.join(output_path, path.basename(input_file))
+            output_file, _ = path.splitext(output_file)
+            output_file += ".html"
+            fobit_instance = FobIt(input_file, output_file)
+            if input_file.endswith(".fob"):
+                fobit_instance.run()
+            elif input_file.endswith(".fib"):
+                fobit_instance.run_python_file(input_file)
+    else:
+        if output_path is not None and path.isdir(output_path):
+            output_file = path.join(output_path, path.basename(input_path))
+            output_file, _ = path.splitext(output_file)
+            output_file += ".html"
+        else:
+            output_file = output_path
+        fobit_instance = FobIt(input_path, output_file)
+        fobit_instance.run()
+
+
+if __name__ == "__main__":
+    main()
