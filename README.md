@@ -1,31 +1,31 @@
-# FobIt
+# PHyB
 
 Simple (cursed) static website generation with python in less than 200 lines of code.
 
 ## Requirements
 
-You need python 3.6+ for fobit to work.
+You need python 3.6+ for PHyB to work.
 
 ## Usage
 
-To run fobit on a single file use:
+To run PHyB on a single file use:
 
-```
-./fobit ./website/index.fob ./build/index.html
+```sh
+./phyb ./website/index.phb ./build/index.html
 ```
 
-To run fobit on a folder use:
+To run PHyB on a folder use:
 
-```
-./fobit ./website/ ./build/
+```sh
+./phyb ./website/ ./build/
 ```
 
 The usage string currently looks like this:
 
-```
-usage: fobit [-h] [-v] INPUT_PATH [OUTPUT_PATH]
+```text
+usage: phyb [-h] [-v] INPUT_PATH [OUTPUT_PATH]
 
-fobit fobs off static website generation (mostly) to python.
+PHyB: Python Hypertext Builder.
 
 positional arguments:
   INPUT_PATH
