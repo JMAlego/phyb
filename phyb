@@ -2,11 +2,11 @@
 """PHyB: Python Hypertext Builder."""
 import sys
 from argparse import ArgumentParser
-from os import listdir, path, makedirs
-from shutil import copyfile
-from typing import Any, Dict, Iterator, Mapping, Optional
-from textwrap import dedent
 from collections import namedtuple
+from os import chdir, listdir, makedirs, path
+from shutil import copyfile
+from textwrap import dedent
+from typing import Any, Dict, Iterator, Mapping, Optional
 
 __version__ = "0.1"
 __author__ = "Jacob Allen <jacob@polyomino.xyz>"
@@ -117,10 +117,10 @@ class PHyB:
 
     def do_phyb(self, file_name: str) -> None:
         """Run phb file (internal)."""
-        old_fob_file = self._globals["CURRENT_FILE"]
-        file_path = path.abspath(PHyB.get_path_relative_to_file(file_name, old_fob_file))
+        old_phyb_file = self._globals["CURRENT_FILE"]
+        file_path = path.abspath(PHyB.get_path_relative_to_file(file_name, old_phyb_file))
         self._globals["CURRENT_FILE"] = file_path
-
+        chdir(path.dirname(file_path))
         file_content = PHyB.get_file_content(file_path)
         file_sections = PHyB.get_template_sections(file_content)
         previous_section_type = "text"
@@ -138,8 +138,8 @@ class PHyB:
             elif current_section.type == "lambda":
                 print(eval(dedent(current_section.content), self._globals, self._locals), end="")  # pylint: disable=eval-used
             previous_section_type = current_section.type
-
-        self._globals["CURRENT_FILE"] = old_fob_file
+        chdir(path.dirname(old_phyb_file) if old_phyb_file else path.dirname(__file__))
+        self._globals["CURRENT_FILE"] = old_phyb_file
 
     def run(self) -> None:
         """Run PHyB on a file at top level (internal)."""
