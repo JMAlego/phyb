@@ -3,7 +3,7 @@
 import sys
 from argparse import ArgumentParser
 from collections import namedtuple
-from os import chdir, listdir, makedirs, path
+from os import chdir, listdir, makedirs, path, getcwd
 from shutil import copyfile
 from textwrap import dedent
 from typing import Any, Dict, Iterator, Mapping, Optional
@@ -118,13 +118,13 @@ class PHyB:
     def do_phyb(self, file_name: str) -> None:
         """Run phb file (internal)."""
         old_phyb_file = self._globals["CURRENT_FILE"]
+        old_location = path.abspath(getcwd())
         file_path = path.abspath(PHyB.get_path_relative_to_file(file_name, old_phyb_file))
         self._globals["CURRENT_FILE"] = file_path
         chdir(path.dirname(file_path))
         file_content = PHyB.get_file_content(file_path)
         file_sections = PHyB.get_template_sections(file_content)
         previous_section_type = "text"
-
         for current_section in file_sections:
             if current_section.type == "code":
                 exec(dedent(current_section.content), self._globals, self._locals)  # pylint: disable=exec-used
@@ -138,7 +138,7 @@ class PHyB:
             elif current_section.type == "lambda":
                 print(eval(dedent(current_section.content), self._globals, self._locals), end="")  # pylint: disable=eval-used
             previous_section_type = current_section.type
-        chdir(path.dirname(old_phyb_file) if old_phyb_file else path.dirname(__file__))
+        chdir(old_location)
         self._globals["CURRENT_FILE"] = old_phyb_file
 
     def run(self) -> None:
